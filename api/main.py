@@ -334,6 +334,10 @@ async def authorize_user(node_id: str,
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Node not found with id: {node_id}"
         )
+    # users staging.kernelci.org and production are superusers
+    # TBD: This is HACK until qualcomm can migrate to direct KCIDB
+    if user.username in ['staging.kernelci.org', 'production']:
+        return user
     if not user.username == node_from_id.owner:
         if not any(group.name in node_from_id.user_groups
                    for group in user.groups):
@@ -480,6 +484,7 @@ async def get_events(request: Request):
        - from: Start timestamp (unix epoch) to filter events
        - kind: Event kind to filter events
        - state: Event state to filter events
+       - result: Event result to filter events
        - recursive: Retrieve node together with event
     This API endpoint is under development and may change in future.
     """
@@ -489,6 +494,7 @@ async def get_events(request: Request):
     limit = query_params.pop('limit', None)
     kind = query_params.pop('kind', None)
     state = query_params.pop('state', None)
+    result = query_params.pop('result', None)
     from_ts = query_params.pop('from', None)
     if from_ts:
         if isinstance(from_ts, str):
@@ -498,6 +504,8 @@ async def get_events(request: Request):
         query_params['data.kind'] = kind
     if state:
         query_params['data.state'] = state
+    if result:
+        query_params['data.result'] = result
     if limit:
         query_params['limit'] = int(limit)
     resp = await db.find_by_attributes_nonpaginated(EventHistory, query_params)
@@ -811,7 +819,9 @@ async def put_batch_nodeset(data: NodeUpdateRequest,
                 detail=f"Node not found with id: {node_id}"
             )
         # verify ownership, and ignore if not owner
-        if not user.username == node_from_id.owner:
+        if not user.username == node_from_id.owner\
+           and user.username != 'production' and\
+           user.username != 'staging.kernelci.org':
             continue
         # right now we support only field:
         # processed_by_kcidb_bridge, also value should be boolean
